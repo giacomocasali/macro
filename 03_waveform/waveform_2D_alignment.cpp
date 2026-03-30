@@ -53,7 +53,7 @@ static std::vector<std::pair<std::vector<double>, std::vector<double>>> correctW
 
 void waveform_2D_alignment() {
     // Apri il file (assicurati che il nome sia corretto per la tua cartella)
-    TFile *file = TFile::Open("data.vbias_{54}.root", "READ");
+    TFile *file = TFile::Open("../../data/data.vbias_{54}.root", "READ");
     if (!file || file->IsZombie()) {
         std::cerr << "Error: Cannot open source file!" << std::endl;
         return;

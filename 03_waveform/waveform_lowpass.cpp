@@ -20,7 +20,7 @@
 #include <TAxis.h>
 #include <TRandom3.h>
 #include <TSystem.h>
-#include "ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
+#include "../header/ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
 
 // ─────────────────────────────────────────────────────────────
 // Repeat a string n times (used for box drawing with ASCII)
@@ -325,7 +325,7 @@ void waveform_lowpass()
 {
     printBox({"Waveform Low-Pass Filter  --  Interactive Mode"});
 
-    TFile* file = TFile::Open("data.vbias_{55}.root", "READ");
+    TFile* file = TFile::Open("../../data/data.vbias_{55}.root", "READ");
     if (!file || file->IsZombie()) {
         std::cerr << "[ERROR] Cannot open data.vbias_{55}.root" << std::endl;
         return;

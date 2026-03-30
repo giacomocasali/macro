@@ -30,7 +30,7 @@ void sipm_risetime_analysis() {
     gStyle->SetOptStat(0);
     gStyle->SetOptFit(0);
 
-    TFile *file = TFile::Open("data.vbias_{40}.root", "READ");
+    TFile *file = TFile::Open("../../data/data.vbias_{40}.root", "READ");
     if(!file || file->IsZombie()) return;
 
     TTree *treeCh1 = (TTree*)file->Get("ch1");

@@ -450,12 +450,12 @@ void alcor_tot_analysis() {
     if(srcChoice==1){
         std::cout<<"  Enter ROOT file path [default: alcor_data.root]: ";
         std::string p; std::getline(std::cin,p);
-        if(p.empty()||p.find_first_not_of(" \t")==std::string::npos) p="alcor_data.root";
+        if(p.empty()||p.find_first_not_of(" \t")==std::string::npos) p="../../data/alcor_data.root";
         if(!loadROOT(p,lsb_ns,rawEvents)) return;
     } else if(srcChoice==2){
         std::cout<<"  Enter CSV file path [default: alcor_data.csv]: ";
         std::string p; std::getline(std::cin,p);
-        if(p.empty()||p.find_first_not_of(" \t")==std::string::npos) p="alcor_data.csv";
+        if(p.empty()||p.find_first_not_of(" \t")==std::string::npos) p="../../data/alcor_data.csv";
         if(!loadCSV(p,rawEvents)) return;
     } else {
         std::cout<<"[INFO] Running in simulation mode..."<<std::endl;

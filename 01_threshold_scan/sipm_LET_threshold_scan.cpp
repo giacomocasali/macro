@@ -86,7 +86,7 @@ static std::tuple<double, double, double, double, TF1*> q_gauss_projection_zoom(
 }
 
 // --- PROGRAMMA ---
-void letvar() {
+void sipm_LET_threshold_scan() {
     gStyle->SetOptFit(1);
     gStyle->SetOptStat(0);
 

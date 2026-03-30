@@ -11,7 +11,7 @@
 void pulse_interarrival_time() {
     gStyle->SetOptStat(1111);
 
-    TFile *file = TFile::Open("calibration.root", "READ");
+    TFile *file = TFile::Open("../../data/calibration.root", "READ");
     if (!file || file->IsZombie()) {
         std::cerr << "Error: Could not open file!" << std::endl;
         return;

@@ -73,15 +73,15 @@ static bool parseFilename(const std::string& path, FileInfo& info) {
 // sorted by vbias then filter.
 static std::vector<FileInfo> findInputFiles() {
     std::vector<FileInfo> files;
-    void* dh = gSystem->OpenDirectory(".");
-    if (!dh) { std::cerr << "Cannot open current directory.\n"; return files; }
+    void* dh = gSystem->OpenDirectory("../../data");
+    if (!dh) { std::cerr << "Cannot open data directory.\n"; return files; }
     const char* entry;
     while ((entry = gSystem->GetDirEntry(dh)) != nullptr) {
         std::string fname(entry);
         if (fname.find("data.vbias_{") == std::string::npos) continue;
         if (fname.size() < 5 || fname.substr(fname.size()-5) != ".root") continue;
         FileInfo info;
-        if (parseFilename(fname, info)) {
+        if (parseFilename("../../data/" + fname, info)) {
             files.push_back(info);
             std::cout << "Found: " << fname
                       << "  →  vbias=" << info.vbias

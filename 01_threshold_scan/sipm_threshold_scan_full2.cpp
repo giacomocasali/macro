@@ -449,6 +449,175 @@ static void makeLaserCanvas(TFile*             rawFile,
 }
 
 // ════════════════════════════════════════════════════════════
+//  OVERLAY CANVAS — single pad, threshold scan + derivative
+//
+//  The threshold scan (blue, left Y axis) is drawn first and
+//  defines the Y scale shown to the user.
+//  The derivative -dN/dV (red) is scaled to "sit on top":
+//    deriv_scaled[k] = counts_max * (deriv[k] / deriv_max)
+//  so its peaks reach the top of the scan curve.
+//  A TGaxis on the right side shows the true derivative scale.
+//  The Gaussian fit and reference lines are drawn on top.
+// ════════════════════════════════════════════════════════════
+static void drawScanOverlay(const FileInfo&            info,
+                            const std::vector<double>& thresholds,
+                            const std::vector<double>& counts,
+                            const std::vector<double>& thr_der_plot,
+                            const std::vector<double>& deriv_plot,
+                            const std::vector<double>& thr_der,
+                            const std::vector<double>& deriv,
+                            TF1*                       fitGaus,
+                            double                     fitMean,
+                            double                     fitMeanErr,
+                            double                     fitSigma,
+                            double                     fitSigmaErr,
+                            double                     fitAmp,
+                            double                     fitChi2,
+                            int                        fitNdf,
+                            double                     t_trig_start,
+                            double                     t_trig_end) {
+
+    int n_pts      = (int)thresholds.size();
+    int n_der_plot = (int)thr_der_plot.size();
+
+    // ── X range ──────────────────────────────────────────────
+    double xhi_data = MIN_THR;
+    for (int k = 0; k < n_pts; ++k)
+        if (counts[k] > 0 && thresholds[k] > xhi_data) xhi_data = thresholds[k];
+    double xRange = xhi_data - MIN_THR;
+    double xlo    = MIN_THR  - xRange * 0.02;
+    double xhi    = xhi_data + xRange * 0.03;
+
+    // ── Y scale: defined entirely by the threshold scan ──────
+    double counts_max = *std::max_element(counts.begin(), counts.end());
+    double ylo = -counts_max * 0.05;
+    double yhi =  counts_max * 1.15;
+
+    // ── Scale derivative to sit within [ylo, yhi] ────────────
+    // Find max of derivative in physical region (avoid noise spike near 0)
+    double deriv_max = 0.0;
+    for (int k = 0; k < n_der_plot; ++k)
+        if (thr_der_plot[k] > MIN_POSITIVE_THR && deriv_plot[k] > deriv_max)
+            deriv_max = deriv_plot[k];
+    if (deriv_max <= 0) deriv_max = 1.0;
+
+    // Map deriv_max → 90% of counts_max so peaks sit just below the scan top
+    double scale = counts_max * 0.90 / deriv_max;
+
+    std::vector<double> deriv_scaled(n_der_plot);
+    for (int k = 0; k < n_der_plot; ++k)
+        deriv_scaled[k] = deriv_plot[k] * scale;
+
+    // ── Graphs ───────────────────────────────────────────────
+    TGraph* grScan = new TGraph(n_pts, thresholds.data(), counts.data());
+    grScan->SetLineColor(kAzure+1);
+    grScan->SetLineWidth(2);
+    grScan->SetMarkerColor(kAzure+1);
+    grScan->SetMarkerStyle(20);
+    grScan->SetMarkerSize(0.3);
+
+    TGraph* grDer = new TGraph(n_der_plot, thr_der_plot.data(), deriv_scaled.data());
+    grDer->SetLineColor(kRed+1);
+    grDer->SetLineWidth(2);
+    grDer->SetMarkerColor(kRed+1);
+    grDer->SetMarkerStyle(20);
+    grDer->SetMarkerSize(0.3);
+
+    // ── Canvas ───────────────────────────────────────────────
+    std::string cname = "c_overlay_" + info.tag;
+    TCanvas* c = new TCanvas(cname.c_str(),
+        ("Overlay — " + info.tag).c_str(), 1000, 650);
+    c->SetLeftMargin(PAD_LEFT);
+    c->SetRightMargin(PAD_RIGHT);
+    c->SetTopMargin(PAD_TOP);
+    c->SetBottomMargin(PAD_BOTTOM);
+    c->SetGrid();
+    c->SetTicks(1, 1);
+
+    // ── Draw scan (sets axes) ─────────────────────────────────
+    grScan->SetTitle(Form(
+        "Threshold scan   V_{bias} = %.0f V,  lux = %.0f"
+        ";Threshold (mV);Counts",
+        info.vbias, info.lux));
+    grScan->Draw("APL");
+    grScan->GetXaxis()->SetRangeUser(xlo, xhi);
+    grScan->GetYaxis()->SetRangeUser(ylo, yhi);
+    grScan->GetXaxis()->SetTitleSize(0.050);
+    grScan->GetXaxis()->SetLabelSize(0.045);
+    grScan->GetYaxis()->SetTitleSize(0.050);
+    grScan->GetYaxis()->SetLabelSize(0.045);
+    grScan->GetYaxis()->SetTitleOffset(1.15);
+
+    // ── Draw derivative data on top ───────────────────────────
+    grDer->Draw("PL same");
+
+    // ── Gaussian fit rescaled ────────────────────────────────
+    if (fitGaus && fitMean > 0) {
+        TF1* fitOvl = new TF1(("gaus_ovl_" + info.tag).c_str(),
+                               "gaus",
+                               fitGaus->GetXmin(), fitGaus->GetXmax());
+        fitOvl->SetParameters(fitGaus->GetParameter(0) * scale,
+                               fitGaus->GetParameter(1),
+                               fitGaus->GetParameter(2));
+        fitOvl->SetLineColor(kGreen+2);
+        fitOvl->SetLineWidth(2);
+        fitOvl->Draw("same");
+
+        // ── Reference lines: always clipped to [ylo, yhi] ───
+        // ROOT clips TLine to the pad range automatically when
+        // the line endpoints are set exactly to ylo and yhi.
+        const double thr_val[3] = { 0.5*fitMean, fitMean, 1.5*fitMean };
+        const double thr_err[3] = { 0.5*fitMeanErr, fitMeanErr, 1.5*fitMeanErr };
+        const int    thr_col[3] = { kCyan+1, kGreen+2, kMagenta+1 };
+        const char*  thr_name[3]= { "0.5 p.e.", "1 p.e.", "1.5 p.e." };
+
+        for (int r = 0; r < 3; ++r) {
+            if (thr_val[r] < xlo || thr_val[r] > xhi) continue;
+            // Use NDC-y endpoints so the line always spans the full
+            // visible Y range regardless of zoom
+            TLine* rl = new TLine(thr_val[r], ylo, thr_val[r], yhi);
+            rl->SetLineColor(thr_col[r]);
+            rl->SetLineStyle(2);
+            rl->SetLineWidth(2);
+            rl->Draw("same");
+        }
+
+        // ── Legend: only μ, σ, and reference lines ──────────
+        double lx1 = 1.0 - PAD_RIGHT - 0.36;
+        double lx2 = 1.0 - PAD_RIGHT - 0.01;
+        double ly2 = 1.0 - PAD_TOP   - 0.02;
+        double ly1 = ly2 - 0.30;
+        TLegend* leg = new TLegend(lx1, ly1, lx2, ly2);
+        leg->SetBorderSize(1);
+        leg->SetFillStyle(1001);
+        leg->SetFillColor(0);
+        leg->SetTextFont(42);
+        leg->SetTextSize(0.038);
+
+        leg->AddEntry((TObject*)nullptr,
+            Form("#mu = %.3f #pm %.3f mV", fitMean, fitMeanErr), "");
+        leg->AddEntry((TObject*)nullptr,
+            Form("#sigma = %.3f #pm %.3f mV", fitSigma, fitSigmaErr), "");
+
+        for (int r = 0; r < 3; ++r) {
+            if (thr_val[r] < xlo || thr_val[r] > xhi) continue;
+            TLine* ld = new TLine();
+            ld->SetLineColor(thr_col[r]);
+            ld->SetLineStyle(2);
+            ld->SetLineWidth(2);
+            leg->AddEntry(ld,
+                Form("%s: %.3f #pm %.3f mV", thr_name[r], thr_val[r], thr_err[r]),
+                "l");
+        }
+        leg->Draw();
+    }
+
+    c->Update(); c->Modified();
+    c->SaveAs(("overlay_" + info.tag + ".png").c_str());
+    std::cout << "  Saved: overlay_" << info.tag << ".png\n";
+}
+
+// ════════════════════════════════════════════════════════════
 //  PROCESS A SINGLE FILE
 //
 //  Parameters:
@@ -840,6 +1009,17 @@ static void processFile(const FileInfo& info,
 
     c->Update(); c->Modified();
     c->SaveAs(("scan_" + info.tag + ".png").c_str());
+
+    // ── Overlay canvas: scan + derivative on a single pad ────
+    drawScanOverlay(info, thresholds, counts,
+                    thr_der_plot, deriv_plot,
+                    thr_der, deriv,
+                    fitGaus,
+                    fitMean, fitMeanErr,
+                    fitSigma, fitSigmaErr,
+                    fitAmp,
+                    fitChi2, fitNdf,
+                    t_trig_start, t_trig_end);
 
     // ── Save to ROOT file ────────────────────────────────────
     std::string outname = "scan_" + info.tag + ".root";

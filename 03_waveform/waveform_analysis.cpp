@@ -37,7 +37,7 @@
 #include <TAxis.h>
 #include <TRandom3.h>
 #include <TSystem.h>
-#include "ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
+#include "../header/ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
 #include <TMultiGraph.h>
 
 // ─────────────────────────────────────────────────────────────
@@ -630,7 +630,7 @@ void waveform_analysis()
     });
 
     // ── Open ROOT file ─────────────────────────────────────────
-    TFile* file = TFile::Open("data.vbias_{53}.root", "READ");
+    TFile* file = TFile::Open("../../data/data.vbias_{53}.root", "READ");
     if (!file || file->IsZombie()) {
         std::cerr << "[ERROR] Cannot open data.vbias_{53}.root" << std::endl;
         return;

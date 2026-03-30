@@ -35,7 +35,7 @@ void sipm_timing_LET_vs_CFD() {
     gStyle->SetTitleSize(0.045, "XY");
     gStyle->SetLabelSize(0.04, "XY");
 
-    TFile *file = TFile::Open("data.vbias_{40}.root", "READ");
+    TFile *file = TFile::Open("../../data/data.vbias_{40}.root", "READ");
     if(!file || file->IsZombie()) return;
 
     TTree *treeCh1   = (TTree*)file->Get("ch1");

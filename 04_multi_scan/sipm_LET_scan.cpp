@@ -81,7 +81,7 @@ void sipm_LET_scan() {
     gStyle->SetOptFit(1);
     gStyle->SetOptStat(0);
 
-    TFile *file = TFile::Open("data/data.vbias_{40}.root", "READ");
+    TFile *file = TFile::Open("../../data/data.vbias_{40}.root", "READ");
     if (!file) return;
 
     TTree *tCh1 = (TTree*)file->Get("ch1");

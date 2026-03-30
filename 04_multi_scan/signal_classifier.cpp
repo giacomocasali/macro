@@ -40,7 +40,7 @@
 #include <TLine.h>
 #include <TRandom3.h>
 #include <TSystem.h>
-#include "ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
+#include "../header/ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
 inline std::vector<double> butterworthLP(
     const std::vector<double>& x, double fc, double fs, int order=4)
 { return butterworthLowPass(x, fc, fs, order); }
@@ -190,7 +190,7 @@ void signal_classifier()
     printBox({"Signal Classifier  --  Adaptive SNR + Temporal Window"});
 
     // ── Open file ─────────────────────────────────────────────
-    TFile* file = TFile::Open("data.vbias_{53}.root", "READ");
+    TFile* file = TFile::Open("../../data/data.vbias_{53}.root", "READ");
     if (!file || file->IsZombie()) {
         std::cerr << "[ERROR] Cannot open data.vbias_{53}.root" << std::endl;
         return;

@@ -4,6 +4,7 @@
 // No ROOT graphics — these functions are reusable in other macros.
 
 #include "Config.h"
+#include "ButterworthFilter.h"
 #include <vector>
 #include <cmath>
 #include <algorithm>
@@ -37,98 +38,6 @@ static std::vector<double> correctBaseline(const std::vector<double>& time,
     std::vector<double> out = amp;
     for (auto& a : out) a -= offset;
     return out;
-}
-
-// ════════════════════════════════════════════════════════════
-//  4th-ORDER BUTTERWORTH LOW-PASS FILTER  —  zero-phase (filtfilt)
-//
-//  Equivalent to scipy.signal.butter(4, fc/(fs/2)) + filtfilt.
-//  Implementation:
-//    1. Compute SOS (second-order sections) via bilinear transform
-//       with frequency pre-warping — identical to scipy.
-//    2. Apply each biquad section forward then backward (filtfilt).
-//       Forward-backward cancels phase shift → zero group delay.
-//    3. Boundary padding (odd-extension, length 3*(order+1)=15 samples)
-//       mirrors scipy's default "odd" pad to suppress edge transients.
-//
-//  fc  = cut-off frequency (MHz)
-//  fs  = sampling frequency (MHz)
-// ════════════════════════════════════════════════════════════
-
-// Apply one biquad section y[n] = b0*x[n]+b1*x[n-1]+b2*x[n-2]
-//                                        -a1*y[n-1]-a2*y[n-2]
-// Direct form II transposed (same as scipy lfilter).
-static std::vector<double> applyBiquad(const std::vector<double>& x,
-                                       double b0, double b1, double b2,
-                                       double a1, double a2) {
-    size_t n = x.size();
-    std::vector<double> y(n, 0.0);
-    double s1 = 0.0, s2 = 0.0;   // state variables
-    for (size_t i = 0; i < n; ++i) {
-        double xi = x[i];
-        y[i] = b0*xi + s1;
-        s1   = b1*xi - a1*y[i] + s2;
-        s2   = b2*xi - a2*y[i];
-    }
-    return y;
-}
-
-static std::vector<double> butterworthLowPass(const std::vector<double>& x,
-                                              double fc, double fs) {
-    // ── Compute SOS coefficients (bilinear transform, pre-warped) ──
-    // Matches scipy butter(4, fc/(fs/2), output='sos') exactly.
-    const int N_SECTIONS = 2;   // order/2
-    double wc = 2.0 * fs * std::tan(M_PI * fc / fs);
-    double c  = 2.0 * fs;
-
-    double b0[N_SECTIONS], b1[N_SECTIONS], b2[N_SECTIONS];
-    double a1[N_SECTIONS], a2[N_SECTIONS];
-
-    for (int k = 0; k < N_SECTIONS; ++k) {
-        // Poles in reverse order (k=0 → section 1 of scipy, k=1 → section 0)
-        double phi = M_PI/2.0 + M_PI*(2.0*(N_SECTIONS-1-k)+1.0)/(2.0*4.0);
-        double pRe = wc * std::cos(phi);
-        double pIm = wc * std::sin(phi);
-        double pm2 = pRe*pRe + pIm*pIm;
-        double d0  =  c*c - 2.0*pRe*c + pm2;
-        double d1  =  2.0*pm2 - 2.0*c*c;
-        double d2  =  c*c + 2.0*pRe*c + pm2;
-        double g   =  pm2 / d0;
-        b0[k] = g;  b1[k] = 2.0*g;  b2[k] = g;
-        a1[k] = d1/d0;
-        a2[k] = d2/d0;
-    }
-
-    // ── Odd-extension padding (mirrors scipy filtfilt default) ──────
-    // Pad length = 3 * (order+1) = 15 samples on each side.
-    // Odd extension: pad[i] = 2*x[0] - x[padlen-i]  (left)
-    //                pad[i] = 2*x[n-1] - x[n-1-(i-n+padlen)] (right)
-    int padlen = 15;
-    int n  = (int)x.size();
-    int np = n + 2*padlen;
-    std::vector<double> xp(np);
-    for (int i = 0; i < padlen; ++i)
-        xp[i] = 2.0*x[0] - x[padlen - i];          // left odd extension
-    for (int i = 0; i < n; ++i)
-        xp[padlen + i] = x[i];                       // original signal
-    for (int i = 0; i < padlen; ++i)
-        xp[padlen + n + i] = 2.0*x[n-1] - x[n-1-1-i]; // right odd extension
-
-    // ── Forward pass through all sections ────────────────────────────
-    std::vector<double> y = xp;
-    for (int s = 0; s < N_SECTIONS; ++s)
-        y = applyBiquad(y, b0[s], b1[s], b2[s], a1[s], a2[s]);
-
-    // ── Reverse ──────────────────────────────────────────────────────
-    std::reverse(y.begin(), y.end());
-
-    // ── Backward pass through all sections ───────────────────────────
-    for (int s = 0; s < N_SECTIONS; ++s)
-        y = applyBiquad(y, b0[s], b1[s], b2[s], a1[s], a2[s]);
-
-    // ── Reverse back and remove padding ──────────────────────────────
-    std::reverse(y.begin(), y.end());
-    return std::vector<double>(y.begin() + padlen, y.begin() + padlen + n);
 }
 
 // ════════════════════════════════════════════════════════════

@@ -40,7 +40,7 @@
 #include <TLine.h>
 #include <TStyle.h>
 #include <TSystem.h>
-#include "ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
+#include "../header/ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
 inline std::vector<double> butterworthLP(
     const std::vector<double>& x, double fc, double fs, int order=4)
 { return butterworthLowPass(x, fc, fs, order); }
@@ -215,7 +215,7 @@ void rising_edge_heatmap()
     printBox({"Rising Edge Heatmap  --  CFD alignment + laser trigger"});
 
     // ── Open file ─────────────────────────────────────────────
-    TFile* file = TFile::Open("data.vbias_{55}.root", "READ");
+    TFile* file = TFile::Open("../data/data.vbias_{55}.root", "READ");
     if (!file || file->IsZombie()) {
         std::cerr << "[ERROR] Cannot open data.vbias_{55}.root" << std::endl;
         return;
