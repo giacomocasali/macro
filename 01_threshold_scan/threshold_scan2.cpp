@@ -9,7 +9,7 @@
 #include <TSystem.h>
 #include <TROOT.h>
 #include <TStyle.h>
-#include "ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
+#include "../header/ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
 
 static std::vector<double> correctBaseline(const std::vector<double>& time, const std::vector<double>& amp, double pre_signal_end = 30.0) {
     std::vector<double> pre;
@@ -29,7 +29,7 @@ static std::vector<double> correctBaseline(const std::vector<double>& time, cons
 void threshold_scan2() {
     gStyle->SetOptStat(0);
 
-    TFile* file = TFile::Open("data.vbias_{55}.root", "READ");
+    TFile* file = TFile::Open("../../data/data.vbias_{55}.root", "READ");
     if (!file || file->IsZombie()) { std::cerr << "Errore apertura file!\n"; return; }
 
     TTree* treeCh1 = (TTree*)file->Get("ch1");

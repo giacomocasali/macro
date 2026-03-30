@@ -38,7 +38,7 @@
 #include <TAxis.h>
 #include <TPad.h>
 #include <TPaveText.h>
-#include "ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
+#include "../header/ButterworthFilter.h"  // scipy-equivalent Butterworth IIR
 #include <TLegend.h>
 #include <TH1D.h>
 
@@ -925,7 +925,7 @@ void sipm_threshold_scan_full() {
     gStyle->SetOptStat(0);
 
     // ── Scan current directory for input files ───────────────
-    void* dirHandle = gSystem->OpenDirectory(".");
+    void* dirHandle = gSystem->OpenDirectory("../../data");
     if (!dirHandle) { std::cerr << "Cannot open current directory.\n"; return; }
 
     std::vector<FileInfo> files;

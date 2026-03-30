@@ -17,6 +17,7 @@
 #include <TLegend.h>
 #include <TLine.h> // Header aggiunto per correggere l'errore
 #include <TGraph.h>
+#include "../header/ButterworthFilter.h"
 
 /**
  * Official code language: English [cite: 2026-02-26]
@@ -89,7 +90,7 @@ void letvar() {
     gStyle->SetOptFit(1);
     gStyle->SetOptStat(0);
 
-    TFile *file = TFile::Open("data/data.vbias_{40}.root", "READ");
+    TFile *file = TFile::Open("../../data/data.vbias_{40}.root", "READ");
     if (!file) return;
 
     TTree *tCh1 = (TTree*)file->Get("ch1");
