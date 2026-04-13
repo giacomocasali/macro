@@ -90,6 +90,7 @@
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/Buttons.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TAttBBox2D.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TAttCanvas.h
+./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TROOT.h
 ./sipm_calibrate_cpp.so: ../header/SignalProcessing.h ../header/Config.h
 ./sipm_calibrate_cpp.so: ../header/ButterworthFilter.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TTree.h
@@ -98,7 +99,6 @@
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TBranch.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TBranchCacheInfo.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TBits.h
-./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TROOT.h
 ./sipm_calibrate_cpp.so: ../header/ButterworthFilter.h
 ./sipm_calibrate_cpp.so: ../header/Calibration.h ../header/SignalProcessing.h
 ./sipm_calibrate_cpp.so: ../header/OutputManager.h
@@ -123,6 +123,8 @@
 ./sipm_calibrate_cpp.so: ../header/CalibIO.h ../header/Calibration.h
 ./sipm_calibrate_cpp.so: ../header/FilterDiagnostics.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TVirtualFFT.h
+./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TApplication.h
+./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TApplicationImp.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TStyle.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/TColor.h
 ./sipm_calibrate_cpp.so: /home/giacomo/tools/root/include/RVersion.h /home/giacomo/tools/root/include/ROOT/RConfig.hxx /home/giacomo/tools/root/include/TClass.h /home/giacomo/tools/root/include/TDictAttributeMap.h /home/giacomo/tools/root/include/TInterpreter.h /home/giacomo/tools/root/include/TROOT.h /home/giacomo/tools/root/include/TBuffer.h /home/giacomo/tools/root/include/TMemberInspector.h /home/giacomo/tools/root/include/TError.h /home/giacomo/tools/root/include/RtypesImp.h /home/giacomo/tools/root/include/TIsAProxy.h /home/giacomo/tools/root/include/TFileMergeInfo.h /home/giacomo/tools/root/include/TCollectionProxyInfo.h /home/giacomo/tools/root/bin/rootcling

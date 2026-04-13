@@ -1,37 +1,17 @@
 #pragma once
-// =============================================================================
 // ButterworthFilter.h
-// Butterworth IIR low-pass filter — scipy.signal.butter equivalent
+// IIR low-pass filter — verified identical to scipy.signal.butter + sosfilt.
+// Max impulse-response difference vs scipy: 3e-17 (machine epsilon).
 //
-// Mathematically verified against scipy.signal.butter + sosfilt:
-//   max impulse-response difference = 3e-17 (machine epsilon, double precision)
+// Two filtering modes:
+//   filter()    — causal one-pass (= sosfilt).  Use in event loop (timing).
+//   filter_zp() — zero-phase forward+backward (= sosfiltfilt). Use for amplitude
+//                 diagnostics only — non-causal, never for timing.
 //
-// Design method:
-//   Analog prototype poles placed at Butterworth angles (Maximally Flat)
-//   Frequency pre-warping via bilinear transform: wc = 2*fs*tan(pi*fc/fs)
-//   Digital poles obtained via bilinear transform of each analog biquad section
-//   Result stored as Second-Order Sections (SOS), cascade of biquad IIR filters
-//
-// Filtering modes:
-//   filter()      — causal one-pass (= scipy sosfilt)
-//                   Has phase delay. Correct for timing analysis (no future samples).
-//   filter_zp()   — zero-phase two-pass forward+backward (= scipy sosfiltfilt)
-//                   No phase delay, but doubles effective order and is non-causal.
-//                   Use only for spectral/amplitude analysis, never for timing.
-//
-// Usage:
-//   #include "ButterworthFilter.h"
-//
-//   // Runtime design (any fc, fs, order):
-//   ButterworthFilter filt(4, 500.0, 5000.0);   // order=4, fc=500 MHz, fs=5000 MHz
-//   std::vector<double> y = filt.filter(x);      // causal
-//   std::vector<double> y = filt.filter_zp(x);   // zero-phase
-//
-//   // Pre-computed coefficients for maximum speed (no design overhead):
-//   auto y = ButterworthFilter::filter_precomputed<BW4_500MHz_5GHz>(x);
-//
-// Official code language: English
-// =============================================================================
+// Quick start:
+//   butterworthLowPass(x, fc_MHz, fs_MHz)    // causal, runtime design
+//   butterworthLowPassZP(x, fc_MHz, fs_MHz)  // zero-phase, runtime design
+//   ButterworthFilter::filter_precomputed<BW4_500MHz_5GHz>(x)  // fast path
 
 #include <vector>
 #include <array>
@@ -40,23 +20,17 @@
 #include <stdexcept>
 #include <string>
 
-// =============================================================================
-// SOS section: { b0, b1, b2, a1, a2 }  (a0 is always 1, omitted)
-// Difference equation per section:
-//   w[n] = x[n] - a1*w[n-1] - a2*w[n-2]
-//   y[n] = b0*w[n] + b1*w[n-1] + b2*w[n-2]
-// (Direct Form II Transposed — same as scipy sosfilt)
-// =============================================================================
+// SOS section: {b0,b1,b2,a1,a2}, a0=1 omitted.
+// Direct Form II Transposed:  w[n] = x[n]-a1*w[n-1]-a2*w[n-2]
+//                             y[n] = b0*w[n]+b1*w[n-1]+b2*w[n-2]
 struct SOSSection {
     double b0, b1, b2;   // numerator
     double a1, a2;        // denominator (a0 = 1 always)
 };
 
-// =============================================================================
-// Pre-computed coefficient sets for common configurations at 5 GS/s
-// Verified against scipy.signal.butter to machine epsilon.
-// Use as template argument to filter_precomputed<T>().
-// =============================================================================
+// Pre-computed SOS coefficients for common 5 GS/s configurations.
+// All verified against scipy to machine epsilon.
+// Use as template argument: ButterworthFilter::filter_precomputed<BW4_500MHz_5GHz>(x)
 
 // 4th order, fc = 100 MHz, fs = 5000 MHz
 struct BW4_100MHz_5GHz {
@@ -154,17 +128,11 @@ struct BW8_500MHz_5GHz {
 };
 
 
-// =============================================================================
-// ButterworthFilter — runtime design for arbitrary fc, fs, order
-// =============================================================================
+// Runtime design for arbitrary fc, fs, order (even, 2–16).
 class ButterworthFilter {
 public:
-    // -------------------------------------------------------------------------
-    // Constructor: design filter at runtime
-    // order : filter order (must be even, 2–8 recommended)
-    // fc    : cutoff frequency [same units as fs]
-    // fs    : sampling frequency
-    // -------------------------------------------------------------------------
+    // order: filter order (even, 2–16)
+    // fc, fs: cutoff and sampling frequency [same units]
     ButterworthFilter(int order, double fc, double fs)
         : order_(order), fc_(fc), fs_(fs)
     {
@@ -177,11 +145,7 @@ public:
         design();
     }
 
-    // -------------------------------------------------------------------------
-    // filter() — causal one-pass (= scipy.signal.sosfilt)
-    // Processes samples left to right. Has group delay (phase shift).
-    // Correct for timing analysis: no future samples used.
-    // -------------------------------------------------------------------------
+    // Causal one-pass (= scipy sosfilt). Use in event loop.
     std::vector<double> filter(const std::vector<double>& x) const {
         std::vector<double> y = x;
         for (const auto& s : sections_)
@@ -189,11 +153,7 @@ public:
         return y;
     }
 
-    // -------------------------------------------------------------------------
-    // filter_zp() — zero-phase two-pass (= scipy.signal.sosfiltfilt)
-    // Forward pass + backward pass. No phase delay, doubles effective order.
-    // Use only for amplitude/spectral analysis. NOT suitable for timing.
-    // -------------------------------------------------------------------------
+    // Zero-phase forward+backward (= scipy sosfiltfilt). Amplitude diagnostics only.
     std::vector<double> filter_zp(const std::vector<double>& x) const {
         std::vector<double> y = x;
         // Forward pass
@@ -207,15 +167,7 @@ public:
         return y;
     }
 
-    // -------------------------------------------------------------------------
-    // filter_precomputed<T>() — static method using pre-computed SOS tables
-    // T must be one of the BW4_*_5GHz / BW8_*_5GHz structs above.
-    // Zero design overhead, maximum speed.
-    //
-    // Example:
-    //   auto y = ButterworthFilter::filter_precomputed<BW4_500MHz_5GHz>(x);
-    //   auto y = ButterworthFilter::filter_zp_precomputed<BW4_500MHz_5GHz>(x);
-    // -------------------------------------------------------------------------
+    // Pre-computed path — zero design overhead, fastest option.
     template<typename T>
     static std::vector<double> filter_precomputed(const std::vector<double>& x) {
         std::vector<double> y = x;
@@ -236,9 +188,7 @@ public:
         return y;
     }
 
-    // -------------------------------------------------------------------------
-    // filter_raw() — accepts raw C array input (for ROOT Double_t arrays)
-    // -------------------------------------------------------------------------
+    // Accepts raw C array (for ROOT Double_t arrays).
     std::vector<double> filter_raw(const double* x, int N) const {
         return filter(std::vector<double>(x, x + N));
     }
@@ -249,15 +199,11 @@ public:
     double fs()    const { return fs_;    }
     const std::vector<SOSSection>& sections() const { return sections_; }
 
-    // -------------------------------------------------------------------------
-    // describe() — print filter parameters (useful for debugging)
-    // -------------------------------------------------------------------------
     std::string describe() const {
-        std::string s = "ButterworthFilter: order=" + std::to_string(order_)
-            + ", fc=" + std::to_string(fc_)
-            + ", fs=" + std::to_string(fs_)
-            + ", sections=" + std::to_string(sections_.size());
-        return s;
+        return "ButterworthFilter: order=" + std::to_string(order_)
+             + ", fc=" + std::to_string(fc_)
+             + ", fs=" + std::to_string(fs_)
+             + ", sections=" + std::to_string(sections_.size());
     }
 
 private:
@@ -266,15 +212,11 @@ private:
     double fs_;
     std::vector<SOSSection> sections_;
 
-    // -------------------------------------------------------------------------
-    // Design: bilinear transform of analog Butterworth prototype
-    // Identical algorithm to scipy.signal.butter:
-    //   1. Pre-warp cutoff: wc = 2*fs*tan(pi*fc/fs)
-    //   2. Place analog poles at Butterworth angles
-    //   3. Map each pair of conjugate poles to a digital biquad via bilinear
-    //   4. Normalise gain so DC gain of each section = 1 (except section 0)
-    // The product of all sections gives overall DC gain of the full filter.
-    // -------------------------------------------------------------------------
+    // Bilinear transform of analog Butterworth prototype (identical to scipy.signal.butter):
+    //   1. Pre-warp: wc = 2*fs*tan(pi*fc/fs)
+    //   2. Place poles at Butterworth angles
+    //   3. Map each pole pair to a digital biquad via bilinear
+    //   4. Normalise: DC gain of each section = 1
     void design() {
         const double pi = M_PI;
         // Pre-warp: map digital cutoff to analog frequency
@@ -298,16 +240,7 @@ private:
             double d1 =  2.0 * mag2 - 2.0 * c*c;
             double d2 =  c*c + 2.0*pRe*c + mag2;
 
-            // Numerator of lowpass biquad: (z+1)^2 = z^2 + 2z + 1
-            // Gain chosen so that DC gain (z=1) of this section = 1.
-            // DC gain = (b0+b1+b2) / (1+a1+a2)
-            // Numerator at DC: b0*(1+2+1) = 4*b0
-            // Denominator at DC: d0+d1+d2 = 4*mag2
-            // → g = mag2 / d0  gives DC gain of (4*mag2)/(4*mag2) = ... wait:
-            //   actually DC gain = g*(1+2+1)/(1 + d1/d0 + d2/d0)
-            //                    = 4g*d0 / (d0+d1+d2)
-            //                    = 4g*d0 / (4*mag2)
-            // For g = mag2/d0: DC gain = 4*(mag2/d0)*d0/(4*mag2) = 1. Correct.
+            // g = mag2/d0 gives DC gain = (4g*d0)/(4*mag2) = 1 per section.
             double g = mag2 / d0;
 
             SOSSection sec;
@@ -320,16 +253,8 @@ private:
         }
     }
 
-    // -------------------------------------------------------------------------
-    // apply_section_forward() — in-place Direct Form II Transposed biquad
-    // w[n] = x[n] - a1*w[n-1] - a2*w[n-2]
-    // y[n] = b0*w[n] + b1*w[n-1] + b2*w[n-2]
-    // Equivalent to: y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2]
-    //                              - a1*y[n-1] - a2*y[n-2]
-    // State variables: z1 = b1*w[n-1] - a1*y[n-1] (pending contribution)
-    //                  z2 = b2*w[n-2] - a2*y[n-2]
-    // This is the same transposed form used by scipy sosfilt.
-    // -------------------------------------------------------------------------
+    // In-place Direct Form II Transposed biquad (same as scipy sosfilt).
+    // w[n] = x[n]-a1*w[n-1]-a2*w[n-2],  y[n] = b0*w[n]+b1*w[n-1]+b2*w[n-2]
     static void apply_section_forward(const SOSSection& s,
                                       std::vector<double>& x)
     {
@@ -342,20 +267,10 @@ private:
         }
     }
 
-    // Static overload for fixed-size array sections (used by precomputed paths)
-    static void apply_section_forward(const SOSSection& s,
-                                      std::vector<double>& x,
-                                      int /*unused*/) {
-        apply_section_forward(s, x);
-    }
 };
 
 
-// =============================================================================
-// Convenience free functions — drop-in replacements for the old
-// butterworthLowPass() found in the project macros.
-// These are verified identical to scipy.signal.sosfilt.
-// =============================================================================
+// Convenience free functions — the main API for the project
 
 // Runtime design (any fc, fs, order 2–16, must be even)
 inline std::vector<double> butterworthLowPass(

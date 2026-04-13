@@ -1,14 +1,14 @@
 /**
  * sipm_calibrate.cpp
  * ==================
- * Programma standalone per la calibrazione p.e. tramite threshold scan.
- * Legge il PRIMO run file per un dato Vbias, esegue la calibrazione,
- * salva il risultato in  ../../data/calib_vbias<V>_cut<C>MHz.root
- * e produce il PNG di calibrazione.
+ * Standalone program for p.e. calibration via threshold scan.
+ * Reads the FIRST run file for a given Vbias, runs the calibration,
+ * saves the result to  ../../data/calib_vbias<V>_cut<C>MHz.root
+ * and produces the calibration PNG.
  *
- * Va eseguito UNA VOLTA PER VBIAS (o quando cambia il cutoff LP).
- * Il risultato viene poi letto da sipm_tot_analysis_v5 senza rieseguire
- * il threshold scan (risparmio di ~5 s, ma soprattutto chiarezza logica).
+ * Run ONCE PER VBIAS (or whenever the LP cutoff changes).
+ * The result is then read by sipm_tot_analysis_v5 without re-running
+ * the threshold scan (saves ~5 s and keeps the logic clean).
  *
  * Compile: .L sipm_calibrate.cpp+
  * Run:     sipm_calibrate()
@@ -27,6 +27,8 @@
 #include <string>
 #include <map>
 #include <sstream>
+#include <limits>
+#include <TApplication.h>
 
 #include <TFile.h>
 #include <TTree.h>
@@ -44,7 +46,7 @@ void sipm_calibrate()
               << "|        SiPM CALIBRATION -- threshold scan                 |\n"
               << "+==========================================================+\n";
 
-    // Helper: salta righe vuote lasciate da cin >> precedenti
+    // Helper: skip blank lines left by previous cin >> calls
     auto readLine = [](const std::string& prompt) -> std::string {
         std::string line;
         std::cout << prompt << std::flush;
@@ -52,7 +54,7 @@ void sipm_calibrate()
         return line;
     };
 
-    // --- 1. Input parametri ------------------------------------
+    // --- 1. Input parameters ------------------------------------
     std::vector<int> vbiasList;
     {
         std::string line = readLine("\nVbias values to calibrate (e.g.  53 54 55):\n> ");
@@ -61,21 +63,41 @@ void sipm_calibrate()
     }
     if (vbiasList.empty()) { std::cerr << "[ERROR] No Vbias specified.\n"; return; }
 
-    double cutoff_MHz;
-    std::cout << "Low-pass filter cut-off [MHz]: " << std::flush;
-    std::cin >> cutoff_MHz;
+    // Low-pass filter: default OFF (raw data)
+    double cutoff_MHz = 0.0;  // <= 0 means no filter
+    {
+        char filt = 0;
+        while (filt != 'y' && filt != 'n') {
+            std::cout << "Apply low-pass filter? [y/n] (default: n): " << std::flush;
+            std::cin >> filt;
+        }
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        if (filt == 'y') {
+            std::cout << "Low-pass filter cut-off [MHz]: " << std::flush;
+            std::cin >> cutoff_MHz;
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            if (cutoff_MHz <= 0) {
+                std::cerr << "[ERROR] Cut-off must be > 0 MHz.\n";
+                return;
+            }
+            std::cout << "  Filter: ON at " << cutoff_MHz << " MHz\n";
+        } else {
+            std::cout << "  Filter: OFF (using raw data)\n";
+        }
+    }
 
     double t_trig_start, t_trig_end;
     std::cout << "Trigger window start [ns]: " << std::flush;
     std::cin >> t_trig_start;
     std::cout << "Trigger window end   [ns]: " << std::flush;
     std::cin >> t_trig_end;
+    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
-    // --- 2. Loop su ogni Vbias --------------------------------
+    // --- 2. Loop over each Vbias --------------------------------
     for (int vbias : vbiasList) {
         std::cout << "\n--- Vbias = " << vbias << " V ---\n";
 
-        // Cerca il primo run file
+        // Find the first run file
         const std::string dataDir = DATA_DIR;
         const std::string pattern = "data.vbias_" + std::to_string(vbias) + "_run_";
         std::map<int, std::string> foundRuns;
@@ -93,7 +115,9 @@ void sipm_calibrate()
                 size_t dot = sub.find(".root");
                 if (dot != std::string::npos) sub = sub.substr(0, dot);
                 foundRuns[std::stoi(sub)] = dataDir + "/" + fname;
-            } catch (...) {}
+            } catch (...) {
+                std::cerr << "[WARN] Cannot parse run number from: " << fname << "\n";
+            }
         }
         gSystem->FreeDirectory(dirp);
 
@@ -103,23 +127,26 @@ void sipm_calibrate()
         const std::string& calFile = foundRuns.begin()->second;
         std::cout << "  Using: " << calFile << "\n";
 
-        // Leggi fs_MHz
+        // Read sampling rate
         double fs_MHz = 0;
         {
             TFile* f0 = TFile::Open(calFile.c_str(), "READ");
             if (!f0 || f0->IsZombie()) { std::cerr << "[ERROR] Cannot open.\n"; continue; }
             TTree* tr = (TTree*)f0->Get("ch1");
-            if (tr) {
+            if (tr && tr->GetEntries() > 0 && tr->GetBranch("time")) {
                 const int N0=1024; Double_t tb[N0];
                 tr->SetBranchAddress("time", tb); tr->GetEntry(0);
-                fs_MHz = 1000.0 / (tb[1] - tb[0]);
+                double dt = tb[1] - tb[0];
+                if (dt > 0) fs_MHz = 1000.0 / dt;
+                else std::cerr << "[ERROR] Invalid time spacing in waveform.\n";
             }
             f0->Close();
+            delete f0; f0 = nullptr;
         }
         if (fs_MHz <= 0) { std::cerr << "[ERROR] Cannot read sampling rate.\n"; continue; }
         std::cout << "  Sampling rate: " << fs_MHz << " MHz\n";
 
-        // Calibrazione
+        // Run calibration
         TFile* fCal = TFile::Open(calFile.c_str(), "READ");
         if (!fCal || fCal->IsZombie()) { std::cerr << "[ERROR] Cannot open.\n"; continue; }
         TTree* tCal = (TTree*)fCal->Get("ch1");
@@ -129,10 +156,16 @@ void sipm_calibrate()
         CalibScanData scanData;
         CalibResult cal = calibrateSpectrum(tCal, cutoff_MHz, fs_MHz,
                                              calTag, ctx, &scanData);
-        fCal->Close();
+        fCal->Close(); delete fCal; fCal = nullptr;
 
         if (!cal.ok) {
             std::cerr << "[ERROR] Calibration failed for Vbias=" << vbias << "\n";
+            continue;
+        }
+        if (cal.m <= 0 || cal.m > 100.0) {
+            std::cerr << "[ERROR] Suspicious gain=" << cal.m
+                      << " mV/p.e. for Vbias=" << vbias
+                      << " — calibration may have failed.\n";
             continue;
         }
 
@@ -141,10 +174,55 @@ void sipm_calibrate()
         cal.t_trig_start = t_trig_start;
         cal.t_trig_end   = t_trig_end;
 
-        // FilterDiag: estimates laser amplitude and sets cal.laser_thr
-        // MUST be called before saveCalibration to persist the correct threshold
-        drawFilterDiagnostics(calFile, cutoff_MHz, fs_MHz,
+        // FilterDiag: runs diagnostics and estimates laser amplitude.
+        // It sets cal.laser_thr to 20% of peak — we override to 5% below.
+        double diag_cutoff = (cutoff_MHz > 0) ? cutoff_MHz : 500.0;
+        drawFilterDiagnostics(calFile, diag_cutoff, fs_MHz,
                               t_trig_start, t_trig_end, cal, calTag, ctx);
+
+        // Override laser_thr: 5% of median peak (not 20%).
+        // 20% is too high for precise timing — the laser rise time causes
+        // a ~15-20 ns shift in t_laser, making delta_t negative.
+        {
+            TFile* fLas = TFile::Open(calFile.c_str(), "READ");
+            if (fLas && !fLas->IsZombie()) {
+                TTree* trL = (TTree*)fLas->Get("laser");
+                if (trL) {
+                    const int NL = 1024;
+                    Double_t tLL[NL], aLL[NL];
+                    trL->SetBranchAddress("time", tLL);
+                    trL->SetBranchAddress("amplitude", aLL);
+                    std::vector<double> peaks;
+                    Long64_t nS = std::min((Long64_t)500, trL->GetEntries());
+                    for (Long64_t ii = 0; ii < nS; ++ii) {
+                        trL->GetEntry(ii);
+                        std::vector<double> pre;
+                        for (int j = 0; j < NL; ++j)
+                            if (tLL[j] < BASELINE_END) pre.push_back(aLL[j]);
+                        double off = 0;
+                        if (!pre.empty()) {
+                            auto tmp = pre;
+                            std::nth_element(tmp.begin(), tmp.begin()+tmp.size()/2, tmp.end());
+                            off = tmp[tmp.size()/2];
+                        }
+                        double pk = -1e9;
+                        for (int j = 0; j < NL; ++j)
+                            if (aLL[j] - off > pk) pk = aLL[j] - off;
+                        if (pk > 0) peaks.push_back(pk);
+                    }
+                    if (!peaks.empty()) {
+                        std::nth_element(peaks.begin(), peaks.begin()+peaks.size()/2, peaks.end());
+                        double medAmp = peaks[peaks.size()/2];
+                        double thr5pct = std::max(10.0, std::min(medAmp * 0.05, 50.0));
+                        std::cout << "  [Laser] Overriding threshold: "
+                                  << cal.laser_thr << " → " << thr5pct
+                                  << " mV (5% of " << medAmp << " mV)\n";
+                        cal.laser_thr = thr5pct;
+                    }
+                }
+                fLas->Close(); delete fLas;
+            }
+        }
 
         // Save everything (gain, offset, laser_thr, cutoff, trig window)
         saveCalibration(cal, scanData.thresholds, scanData.counts,

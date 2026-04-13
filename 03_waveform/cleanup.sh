@@ -38,3 +38,22 @@ case "$choice" in
     exit 1
     ;;
 esac
+    # 3. Interactive removal of PNG plots
+echo "-------------------------------------------------------"
+read -p "Do you want to delete all .root files in this directory? (y/n): " choice
+
+case "$choice" in
+  y|Y )
+    echo "Deleting all root files..."
+    rm -vf *.root
+    echo "Cleanup complete."
+    ;;
+  n|N )
+    echo "Operation aborted. root files were kept."
+    exit 0
+    ;;
+  * )
+    echo "Invalid input. No root files were deleted."
+    exit 1
+    ;;
+esac
