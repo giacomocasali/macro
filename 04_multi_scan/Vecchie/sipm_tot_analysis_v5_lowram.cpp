@@ -51,9 +51,23 @@ void sipm_tot_analysis_v5()
               << "+==========================================================+\n"
               << "  Data dir: " << dataDir << "\n\n";
 
+    // readLine: legge una riga non vuota; gestisce EOF e errori stdin.
     auto readLine = [](const std::string& prompt) -> std::string {
-        std::string line; std::cout << prompt << std::flush;
-        while (line.empty()) std::getline(std::cin, line); return line; };
+        std::string line;
+        while (true) {
+            std::cout << prompt << std::flush;
+            if (!std::getline(std::cin, line)) {
+                // EOF o errore: esci invece di girare per sempre
+                std::cerr << "\n[ERROR] stdin closed or unexpected EOF.\n";
+                std::exit(1);
+            }
+            // Rimuovi whitespace iniziale/finale
+            auto b = line.find_first_not_of(" \t\r\n");
+            if (b != std::string::npos) { line = line.substr(b); break; }
+            // Riga vuota → ripete il prompt
+        }
+        return line;
+    };
 
     // 1. Vbias
     std::vector<int> vbiasList;
@@ -71,23 +85,49 @@ void sipm_tot_analysis_v5()
         auto cutoffs=findCalibratedCutoffs(vbias,dataDir);
         if(cutoffs.empty()){std::cerr<<"  [WARN] Vbias="<<vbias<<": no cal.\n";continue;}
         double chosen=cutoffs.back();
-        if(cutoffs.size()>1){std::cout<<"  Vbias="<<vbias<<" cutoff: ";for(double co:cutoffs)std::cout<<(int)co<<" ";std::cout<<"MHz\n  Quale? ["<<(int)chosen<<"]: "<<std::flush;std::string line;std::getline(std::cin,line);if(!line.empty()){try{double inp=std::stod(line);double best=chosen,bestD=1e9;for(double co:cutoffs)if(std::abs(co-inp)<bestD){bestD=std::abs(co-inp);best=co;}chosen=best;}catch(...){}}}
+        if(cutoffs.size()>1){std::cout<<"  Vbias="<<vbias<<" cutoff: ";for(double co:cutoffs)std::cout<<(int)co<<" ";std::cout<<"MHz\n  Which one? ["<<(int)chosen<<"]: "<<std::flush;std::string line;std::getline(std::cin,line);if(!line.empty()){try{double inp=std::stod(line);double best=chosen,bestD=1e9;for(double co:cutoffs)if(std::abs(co-inp)<bestD){bestD=std::abs(co-inp);best=co;}chosen=best;}catch(...){}}}
         CalibResult cal;if(!loadCalibration(cal,vbias,chosen,dataDir))continue;if(cal.m<=0||cal.m>100)continue;
         calMap[vbias]=cal;
         std::cout<<"  Vbias="<<vbias<<" gain="<<cal.m<<" mV/p.e. trig=["<<cal.t_trig_start<<","<<cal.t_trig_end<<"]\n";
     }
     if(calMap.empty()){std::cerr<<"[ERROR] No cal.\n";return;}
 
-    // 4. Fit window
-    double fit_lo,fit_hi;
-    std::cout<<"\nFit window start [ns]: "<<std::flush;std::cin>>fit_lo;
-    std::cout<<"Fit window end   [ns]: "<<std::flush;std::cin>>fit_hi;
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(),'\n');
-    if(fit_lo>=fit_hi){std::cerr<<"[ERROR] Invalid.\n";return;}
+    // 4. Fit window — con validazione e recovery da failbit
+    // Helper: legge un double dalla riga già letta (riusa readLine per gestire EOF)
+    auto readDouble = [&readLine](const std::string& prompt) -> double {
+        while (true) {
+            std::string line = readLine(prompt);
+            try {
+                std::size_t pos;
+                double val = std::stod(line, &pos);
+                // Verifica che tutta la stringa sia stata consumata
+                while (pos < line.size() && std::isspace((unsigned char)line[pos])) ++pos;
+                if (pos == line.size()) return val;
+            } catch (...) {}
+            std::cerr << "  [!] Invalid value, try again.\n";
+        }
+    };
 
-    TWMethod tw_method=askTimeWalkMethod();
-    char ans=0;while(ans!='y'&&ans!='n'){std::cout<<"Per-p.e.? [y/n]: "<<std::flush;std::cin>>ans;}std::cin.ignore(std::numeric_limits<std::streamsize>::max(),'\n');bool do_pe=(ans=='y');
-    char fa=0;while(fa!='y'&&fa!='n'){std::cout<<"Filtro LP? [y/n]: "<<std::flush;std::cin>>fa;}std::cin.ignore(std::numeric_limits<std::streamsize>::max(),'\n');bool use_filter=(fa=='y');
+    double fit_lo = readDouble("\nFit window start [ns]: ");
+    double fit_hi = readDouble("Fit window end   [ns]: ");
+    if (fit_lo >= fit_hi) { std::cerr << "[ERROR] fit_lo must be < fit_hi.\n"; return; }
+
+    // Helper: legge un char y/n con recovery da failbit e EOF
+    auto readYN = [&readLine](const std::string& prompt) -> bool {
+        while (true) {
+            std::string line = readLine(prompt);
+            if (!line.empty()) {
+                char c = (char)std::tolower((unsigned char)line[0]);
+                if (c == 'y') return true;
+                if (c == 'n') return false;
+            }
+            std::cerr << "  [!] Type y or n.\n";
+        }
+    };
+
+    TWMethod tw_method = askTimeWalkMethod();
+    bool do_pe     = readYN("Per-p.e.? [y/n]: ");
+    bool use_filter = readYN("LP filter? [y/n]: ");
 
     // 5. Summary
     std::cout<<"\n+==========================================================+\n|  Vbias: ";for(int v:vbiasList)std::cout<<v<<" ";
