@@ -30,10 +30,10 @@ void threshold_scan2() {
     gStyle->SetOptStat(0);
 
     TFile* file = TFile::Open("../../data/data.vbias_{55}.root", "READ");
-    if (!file || file->IsZombie()) { std::cerr << "Errore apertura file!\n"; return; }
+    if (!file || file->IsZombie()) { std::cerr << "Error opening file.\n"; return; }
 
     TTree* treeCh1 = (TTree*)file->Get("ch1");
-    if (!treeCh1) { std::cerr << "Tree ch1 non trovato!\n"; return; }
+    if (!treeCh1) { std::cerr << "Tree ch1 not found.\n"; return; }
 
     const int N = 1024;
     Double_t t1[N], a1[N];
@@ -45,7 +45,7 @@ void threshold_scan2() {
     std::cout << "Sampling frequency: " << fs_MHz << " MHz\n";
 
     double cutoff_MHz;
-    std::cout << "Frequenza di taglio LP [MHz]: ";
+    std::cout << "LP cutoff frequency [MHz]: ";
     std::cin >> cutoff_MHz;
 
     // FIX: virgola mancante corretta
@@ -111,6 +111,6 @@ void threshold_scan2() {
     cScan->SaveAs("threshold_scan.png");
     cScan->SaveAs("threshold_scan.root");
 
-    std::cout << "\nDONE. Grafico salvato. Chiudi la finestra per uscire.\n";
+    std::cout << "\nDONE. Plot saved. Close the window to exit.\n";
     // Niente gSystem->Run() → ROOT rimane responsivo
 }

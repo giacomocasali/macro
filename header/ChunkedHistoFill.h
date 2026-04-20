@@ -1,12 +1,7 @@
 #pragma once
-// ChunkedHistoFill.h — v2
-// ═══════════════════════════════════════════════════════════════
-// RAM-optimised histogram filling from the event cache TTree.
-// Reads the TTree in chunks of CHUNK_SIZE events, fills all
-// registered histograms in a single pass.
-//
-// Peak RAM per pass: O(CHUNK_SIZE × 36 bytes) ≈ 1.8 MB
-// ═══════════════════════════════════════════════════════════════
+// ChunkedHistoFill.h — v3
+// Aggiunge delta_t_lo e delta_t_hi a CacheEvent e ChunkedFiller.
+// Il resto invariato rispetto a v2.
 
 #include "TOTAnalysis.h"
 #include "EventCache.h"
@@ -24,6 +19,7 @@
 #include <TF1.h>
 #include <TGraphErrors.h>
 #include <TSystem.h>
+#include <TParameter.h>
 
 static constexpr Long64_t CHUNK_SIZE = 50000;
 
@@ -32,6 +28,8 @@ struct CacheEvent {
     double delta_t;
     double amp_max;
     int    n_pe;
+    double delta_t_lo;  // t_rise(0.2*LET) - t_laser  (TRISE_INVALID se assente)
+    double delta_t_hi;  // t_rise(0.8*LET) - t_laser  (TRISE_INVALID se assente)
 };
 
 struct StatAccum {
@@ -78,23 +76,31 @@ public:
         TTree* tree = (TTree*)f->Get("events");
         if (!tree) { f->Close(); delete f; return 0; }
 
-        // Abilita cache di lettura per velocità
-        tree->SetCacheSize(10 * 1024 * 1024);  // 10 MB cache
+        tree->SetCacheSize(10 * 1024 * 1024);
         tree->AddBranchToCache("*", true);
 
         Double_t tot, delta_t, amp_max;
+        Double_t delta_t_lo = TRISE_INVALID, delta_t_hi = TRISE_INVALID;
         Int_t    n_pe;
         tree->SetBranchAddress("tot",     &tot);
         tree->SetBranchAddress("delta_t", &delta_t);
         tree->SetBranchAddress("amp_max", &amp_max);
         tree->SetBranchAddress("n_pe",    &n_pe);
 
+        // Legge i nuovi branch se presenti (cache v3), altrimenti usa sentinella
+        bool has_lo = (tree->GetBranch("delta_t_lo") != nullptr);
+        bool has_hi = (tree->GetBranch("delta_t_hi") != nullptr);
+        if (has_lo) tree->SetBranchAddress("delta_t_lo", &delta_t_lo);
+        if (has_hi) tree->SetBranchAddress("delta_t_hi", &delta_t_hi);
+
         Long64_t nTotal = tree->GetEntries();
         Long64_t nProcessed = 0;
 
         for (Long64_t i = 0; i < nTotal; ++i) {
             tree->GetEntry(i);
-            CacheEvent ev{tot, delta_t, amp_max, (int)n_pe};
+            CacheEvent ev{tot, delta_t, amp_max, (int)n_pe,
+                          has_lo ? delta_t_lo : TRISE_INVALID,
+                          has_hi ? delta_t_hi : TRISE_INVALID};
             if (correction_) correction_(ev);
 
             for (auto& [h, func] : h1_) func(h, ev);
@@ -104,10 +110,8 @@ public:
             ++nProcessed;
         }
 
-        // Cleanup esplicito
         tree->SetCacheSize(0);
-        f->Close();
-        delete f;
+        f->Close(); delete f;
         return nProcessed;
     }
 
@@ -125,8 +129,8 @@ private:
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  Time-walk: empirical, streamed
-//  Single pass: accumula Mean(Δt) vs TOT in bin, poi fitta.
+//  Time-walk: FitResiduals con esponenziale negativo, streaming.
+//  Invariato rispetto a v2.
 // ═══════════════════════════════════════════════════════════════
 struct TWBin { double sum=0, sum2=0; int count=0; };
 
@@ -137,8 +141,9 @@ static TF1* computeTimeWalkFromCache(
         double& tot_min_out,
         int n_bins = 20)
 {
-    // Un solo passaggio: trova range E accumula bins contemporaneamente
-    // Prima passiamo per trovare tot_min/max
+    const double tw_lo = fit_lo - 5.0;
+    const double tw_hi = fit_hi + 5.0;
+
     StatAccum totRange;
     { ChunkedFiller f0(cachePath);
       f0.addStatAccum(&totRange, [](const CacheEvent& e){ return e.tot; });
@@ -151,7 +156,6 @@ static TF1* computeTimeWalkFromCache(
     double bin_w = (tot_max - tot_min) / n_bins;
     if (bin_w <= 0) return nullptr;
 
-    // Secondo passaggio: accumula bins
     std::vector<TWBin> bins(n_bins);
     TFile* f = TFile::Open(cachePath.c_str(), "READ");
     if (!f || f->IsZombie()) { delete f; return nullptr; }
@@ -159,16 +163,15 @@ static TF1* computeTimeWalkFromCache(
     if (!tree) { f->Close(); delete f; return nullptr; }
 
     Double_t tot, delta_t;
-    tree->SetBranchAddress("tot", &tot);
-    tree->SetBranchAddress("delta_t", &delta_t);
-    // Disabilita branch inutili
     tree->SetBranchStatus("*", 0);
     tree->SetBranchStatus("tot", 1);
     tree->SetBranchStatus("delta_t", 1);
+    tree->SetBranchAddress("tot", &tot);
+    tree->SetBranchAddress("delta_t", &delta_t);
 
     for (Long64_t i = 0; i < tree->GetEntries(); ++i) {
         tree->GetEntry(i);
-        if (delta_t < fit_lo || delta_t > fit_hi) continue;
+        if (delta_t < tw_lo || delta_t > tw_hi) continue;
         int b = (int)((tot - tot_min) / bin_w);
         if (b < 0 || b >= n_bins) continue;
         bins[b].sum += delta_t; bins[b].sum2 += delta_t*delta_t; bins[b].count++;
@@ -179,30 +182,37 @@ static TF1* computeTimeWalkFromCache(
     for (int b = 0; b < n_bins; ++b) {
         if (bins[b].count < 5) continue;
         double mean = bins[b].sum / bins[b].count;
-        double rms = std::sqrt(std::max(bins[b].sum2/bins[b].count - mean*mean, 0.0));
-        vTOT.push_back(tot_min + (b+0.5)*bin_w);
+        double rms  = std::sqrt(std::max(bins[b].sum2/bins[b].count - mean*mean, 0.0));
+        vTOT .push_back(tot_min + (b+0.5)*bin_w);
         vMean.push_back(mean);
-        vErr.push_back(rms / std::sqrt(bins[b].count));
+        vErr .push_back(rms / std::sqrt(bins[b].count));
     }
     if (vTOT.size() < 3) return nullptr;
 
-    TGraphErrors* gr = new TGraphErrors(vTOT.size(), vTOT.data(), vMean.data(), nullptr, vErr.data());
-    TF1* fTW = new TF1(Form("fTW_%s", tag.c_str()), "pol2", vTOT.front(), tot_max);
+    TGraphErrors* gr = new TGraphErrors(vTOT.size(),
+        vTOT.data(), vMean.data(), nullptr, vErr.data());
+    TF1* fTW = new TF1(Form("fTW_%s", tag.c_str()),
+                        "[0] + [1]*exp(-x/[2])", vTOT.front(), tot_max);
+    const double y_tail = vMean.back();
+    const double y_head = vMean.front();
+    const double tau0   = std::max((vTOT.back() - vTOT.front()) * 0.35, 1e-3);
+    fTW->SetParameters(y_tail, y_head - y_tail, tau0);
+    fTW->SetParLimits(2, 1e-4, 1e6);
     gr->Fit(fTW, "RQ");
     delete gr;
 
-    std::cout << "  [TW] Dt(TOT) = " << std::scientific << std::setprecision(4)
-              << fTW->GetParameter(0) << " + " << fTW->GetParameter(1) << "*TOT + "
-              << fTW->GetParameter(2) << "*TOT^2\n" << std::defaultfloat;
+    std::cout << "  [TW] p0=" << fTW->GetParameter(0)
+              << "  p1=" << fTW->GetParameter(1)
+              << "  tau=" << fTW->GetParameter(2) << " ns\n";
     return fTW;
 }
 
-// Per-p.e. TW
+// Per-p.e. TW — invariato
 static std::map<int,double> computeTimeWalkAmplitudeFromCache(
         const std::string& cachePath, double fit_lo, double fit_hi)
 {
     std::map<int,double> result;
-    std::map<int,TWBin> acc;
+    std::map<int,TWBin>  acc;
 
     TFile* f = TFile::Open(cachePath.c_str(), "READ");
     if (!f || f->IsZombie()) { delete f; return result; }
@@ -214,7 +224,7 @@ static std::map<int,double> computeTimeWalkAmplitudeFromCache(
     tree->SetBranchStatus("delta_t", 1);
     tree->SetBranchStatus("n_pe", 1);
     tree->SetBranchAddress("delta_t", &delta_t);
-    tree->SetBranchAddress("n_pe", &n_pe);
+    tree->SetBranchAddress("n_pe",    &n_pe);
 
     for (Long64_t i = 0; i < tree->GetEntries(); ++i) {
         tree->GetEntry(i);
@@ -234,7 +244,7 @@ static std::map<int,double> computeTimeWalkAmplitudeFromCache(
     return result;
 }
 
-// Carica subset limitato di eventi (per drawByPE)
+// loadEventsSmall — invariato
 static std::vector<TOTEvent> loadEventsSmall(const std::string& cachePath,
                                               Long64_t maxEvents = 200000) {
     std::vector<TOTEvent> events;
@@ -243,17 +253,25 @@ static std::vector<TOTEvent> loadEventsSmall(const std::string& cachePath,
     TTree* tree = (TTree*)f->Get("events");
     if (!tree) { f->Close(); delete f; return events; }
 
-    Double_t tot, delta_t, amp_max; Int_t n_pe;
-    tree->SetBranchAddress("tot", &tot);
+    Double_t tot, delta_t, amp_max;
+    Double_t delta_t_lo = TRISE_INVALID, delta_t_hi = TRISE_INVALID;
+    Int_t    n_pe;
+    tree->SetBranchAddress("tot",     &tot);
     tree->SetBranchAddress("delta_t", &delta_t);
     tree->SetBranchAddress("amp_max", &amp_max);
-    tree->SetBranchAddress("n_pe", &n_pe);
+    tree->SetBranchAddress("n_pe",    &n_pe);
+    bool has_lo = (tree->GetBranch("delta_t_lo") != nullptr);
+    bool has_hi = (tree->GetBranch("delta_t_hi") != nullptr);
+    if (has_lo) tree->SetBranchAddress("delta_t_lo", &delta_t_lo);
+    if (has_hi) tree->SetBranchAddress("delta_t_hi", &delta_t_hi);
 
     Long64_t nRead = std::min(tree->GetEntries(), maxEvents);
     events.reserve(nRead);
     for (Long64_t i = 0; i < nRead; ++i) {
         tree->GetEntry(i);
-        events.push_back({tot, delta_t, amp_max, (int)n_pe});
+        events.push_back({tot, delta_t, amp_max, (int)n_pe,
+                          has_lo ? delta_t_lo : TRISE_INVALID,
+                          has_hi ? delta_t_hi : TRISE_INVALID});
     }
     f->Close(); delete f;
     return events;
@@ -262,6 +280,8 @@ static std::vector<TOTEvent> loadEventsSmall(const std::string& cachePath,
 static Long64_t countCacheEvents(const std::string& cachePath) {
     TFile* f = TFile::Open(cachePath.c_str(), "READ");
     if (!f || f->IsZombie()) { delete f; return 0; }
+    auto* complete = dynamic_cast<TParameter<int>*>(f->Get("cache_complete"));
+    if (!complete || complete->GetVal() != 1) { f->Close(); delete f; return 0; }
     TTree* tree = (TTree*)f->Get("events");
     Long64_t n = tree ? tree->GetEntries() : 0;
     f->Close(); delete f;

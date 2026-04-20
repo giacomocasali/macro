@@ -16,6 +16,10 @@
 #include "../header/TimingCorrection.h"
 #include "../header/VbiasAnalysis_v2.h"
 
+// Definizione variabile globale modalità analisi
+// 0 = ORIGINAL (restrittivo), 1 = LOOSE (permissivo)
+int g_analysis_mode = 0;
+
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -61,13 +65,30 @@ void sipm_tot_analysis() {
     gStyle->SetOptStat(0);
     gStyle->SetPalette(kBird);
 
-    OutCtx ctx = createOutputDirs();
     const std::string dataDir = DATA_DIR;
 
     std::cout << "\n+==========================================================+\n"
               << "|  SiPM TOT ANALYSIS v5 (LOW-RAM + INTERACTIVE END)       |\n"
               << "+==========================================================+\n"
               << "  Data dir: " << dataDir << "\n\n";
+
+    // ── MODE SELECTION ──────────────────────────────────────
+    std::cout << "\n+--- ANALYSIS MODE ---+\n"
+              << "|  0 = ORIGINAL (restrictive, high quality)\n"
+              << "|  1 = LOOSE    (permissive, more statistics)\n"
+              << "+---------------------+\n";
+    {
+        std::string line;
+        while (true) {
+            std::cout << "Select mode [0/1]: " << std::flush;
+            if (!std::getline(std::cin, line)) { std::exit(1); }
+            if (line == "0") { g_analysis_mode = 0; break; }
+            if (line == "1") { g_analysis_mode = 1; break; }
+            std::cerr << "  [!] Enter 0 or 1.\n";
+        }
+        std::cout << "  --> Mode: " 
+                  << (g_analysis_mode == 0 ? "ORIGINAL" : "LOOSE") << "\n\n";
+    }
 
     auto readLine = [](const std::string& prompt) -> std::string {
         std::string line;
@@ -188,12 +209,36 @@ void sipm_tot_analysis() {
     bool do_pe = readYN("Per-p.e.? [y/n]: ");
     bool use_filter = readYN("LP filter? [y/n]: ");
 
+    // Build run tag: vbias list + LET thresholds + TW + filter
+    // e.g. "vbias53_54_55__let0.10_0.50_1.00__tw__filt"
+    {
+        // nothing here yet — tag built below
+    }
+    std::string runTag;
+    {
+        // Vbias
+        runTag = "vbias";
+        for (int v : vbiasList) runTag += std::to_string(v) + "_";
+        if (!runTag.empty() && runTag.back() == '_') runTag.pop_back();
+        // LET
+        runTag += "__let";
+        for (double f : fracs_pe) runTag += Form("%.2f_", f);
+        if (!runTag.empty() && runTag.back() == '_') runTag.pop_back();
+        // TW
+        runTag += (tw_method == TWMethod::FIT_RESIDUALS) ? "__tw" : "__notw";
+        // Filter
+        runTag += use_filter ? "__filt" : "__nofilt";
+        // Per-p.e. analysis
+        runTag += do_pe ? "__byPE" : "__noPE";
+    }
+    OutCtx ctx = createOutputDirs(runTag);
+
     std::cout << "\n+==========================================================+\n|  Vbias: ";
     for (int v : vbiasList) std::cout << v << " ";
     std::cout << "V\n|  Fit: [" << fit_lo << "," << fit_hi << "] ns\n|  LET: ";
     for (double f : fracs_pe) std::cout << f << " ";
     std::cout << "p.e.\n|  TW: "
-              << (tw_method == TWMethod::EMPIRICAL ? "Emp" : tw_method == TWMethod::AMPLITUDE ? "Amp" : "None")
+              << (tw_method == TWMethod::FIT_RESIDUALS ? "FitResidualsExp" : "None")
               << " Filter: " << (use_filter ? "yes" : "NO")
               << "\n+==========================================================+\n\n";
 

@@ -22,6 +22,7 @@
 #include <string>
 #include <vector>
 #include <ctime>
+#include <cctype>
 #include <TFile.h>
 #include <TH2D.h>
 #include <TCanvas.h>
@@ -140,14 +141,32 @@ struct OutCtx {
 
 // Creates timestamped subdirectories and returns a ready-to-use OutCtx.
 // Call once at the start of main.
-static OutCtx createOutputDirs() {
+static std::string sanitizeOutputTag(const std::string& in) {
+    std::string out;
+    out.reserve(in.size());
+    for (char c : in) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc) || c == '_' || c == '-' || c == '.') out.push_back(c);
+        else out.push_back('_');
+    }
+    while (!out.empty() && (out.back() == '_' || out.back() == '.')) out.pop_back();
+    return out;
+}
+
+static OutCtx createOutputDirs(const std::string& runTag = "") {
     time_t now = time(nullptr);
     struct tm* t = localtime(&now);
     char ts[32];
     strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", t);
 
-    std::string pngDir  = "../canvas/"    + std::string(ts);
-    std::string rootDir = "../file_root/" + std::string(ts);
+    std::string leaf = std::string(ts);
+    if (!runTag.empty()) {
+        std::string safe = sanitizeOutputTag(runTag);
+        if (!safe.empty()) leaf += "__" + safe;
+    }
+
+    std::string pngDir  = "../canvas/"    + leaf;
+    std::string rootDir = "../file_root/" + leaf;
 
     // Base directories (canvas/ and file_root/) must already exist
     if (gSystem->mkdir(pngDir .c_str(), true) != 0)

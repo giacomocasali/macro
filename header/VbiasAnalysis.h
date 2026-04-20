@@ -473,6 +473,7 @@ static std::map<double, std::pair<double,double>> processOneVbias(
         // ── Plot standard ────────────────────────────────────────
         TH2D* h2D = fillTH2D(events, ltag, frac, false);
         drawTOTMap(h2D, ltag, ctx, false);
+        drawTOTProjection(h2D, ltag, ctx, false);
         drawGlobalProjection(h2D, ltag, fit_lo, fit_hi, ctx, false, &events);
         drawDeltaTHistogram(events, ltag, fit_lo, fit_hi, ctx, false);
 
@@ -484,6 +485,7 @@ static std::map<double, std::pair<double,double>> processOneVbias(
         if (tw_method != TWMethod::NONE) {
             TH2D* h2D_corr = fillTH2D(events_corr, ltag, frac, true);
             drawTOTMap(h2D_corr, ltag, ctx, true);
+            drawTOTProjection(h2D_corr, ltag, ctx, true);
             drawGlobalProjection(h2D_corr, ltag, fit_lo, fit_hi, ctx, true, &events_corr);
             drawDeltaTHistogram(events_corr, ltag, fit_lo, fit_hi, ctx, true);
             if (do_pe_analysis) drawByPE(events_corr, ltag, fit_lo, fit_hi, ctx);

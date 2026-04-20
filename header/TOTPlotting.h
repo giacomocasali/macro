@@ -3,6 +3,7 @@
 // Canvas functions for the TOT analysis:
 //   fillTH2D()             — fill TOT vs Δt map from event vector
 //   drawTOTMap()           — 2D COLZ canvas (log Z)
+//   drawTOTProjection()    — TOT 1D projection (X axis): TOT values vs counts
 //   drawGlobalProjection() — Δt projection with Gaussian + q-Gaussian fits
 //   drawSlicesAndTrend()   — TOT slices with q-Gaussian fit, σ and mean trend
 //   drawByPE()             — per-p.e. Δt distributions with Gaussian fits
@@ -121,6 +122,47 @@ static void drawTOTMap(TH2D* h2D, const std::string& tag,
     c->Update(); c->Modified();
     ctx.savePNG(c, Form("tot_map%s_%s.png", suffix.c_str(), tag.c_str()));
     // delete c;  // FIX: canvas resta aperta per gApplication->Run()
+}
+
+// TOT 1D projection (X axis of TH2D): TOT values vs counts
+static void drawTOTProjection(TH2D* h2D, const std::string& tag,
+                               OutCtx& ctx, bool corrected = false) {
+    std::string suffix = corrected ? "_corr" : "";
+    TH1D* hTOT = h2D->ProjectionX(
+        Form("hTOTproj%s_%s", suffix.c_str(), tag.c_str()));
+    hTOT->SetDirectory(nullptr);
+    hTOT->SetTitle(Form("TOT distribution%s   %s;TOT (ns);Counts",
+                        corrected ? " (corrected)" : "", tag.c_str()));
+
+    TCanvas* c = new TCanvas(
+        Form("cTOTproj%s_%s", suffix.c_str(), tag.c_str()),
+        Form("TOT projection%s — %s", corrected ? " (corr)" : "", tag.c_str()),
+        900, 600);
+    c->SetGrid();
+    c->SetLeftMargin(PAD_LEFT);
+    c->SetBottomMargin(PAD_BOTTOM);
+    c->SetTopMargin(PAD_TOP);
+    c->SetLogy();
+
+    hTOT->SetLineColor(kAzure+1);
+    hTOT->SetLineWidth(2);
+    hTOT->Draw("HIST");
+
+    double mean = hTOT->GetMean();
+    double rms  = hTOT->GetRMS();
+    double tot  = hTOT->GetEntries();
+    TPaveText* pt = new TPaveText(0.62, 0.70, 0.93, 0.88, "NDC");
+    pt->SetBorderSize(1); pt->SetFillColor(0); pt->SetFillStyle(1001);
+    pt->SetTextFont(42);  pt->SetTextSize(0.038);
+    pt->AddText(Form("Entries: %.0f", tot));
+    pt->AddText(Form("Mean:  %.2f ns", mean));
+    pt->AddText(Form("RMS:   %.2f ns", rms));
+    pt->Draw();
+
+    c->Update(); c->Modified();
+    ctx.savePNG(c, Form("tot_xprojection%s_%s.png", suffix.c_str(), tag.c_str()));
+    delete hTOT;
+    // delete c;  // FIX: canvas resta aperta
 }
 
 // q-Gaussian for global projection fits. Left side (q1): exact Gaussian (q1→1).

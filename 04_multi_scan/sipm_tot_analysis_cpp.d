@@ -123,8 +123,11 @@
 ./sipm_tot_analysis_cpp.so: ../header/CalibIO.h ../header/Calibration.h
 ./sipm_tot_analysis_cpp.so: ../header/TimingCorrection.h
 ./sipm_tot_analysis_cpp.so: ../header/TOTAnalysis.h
+./sipm_tot_analysis_cpp.so: /home/giacomo/tools/root/include/TProfile.h
 ./sipm_tot_analysis_cpp.so: ../header/VbiasAnalysis_v2.h ../header/CalibIO.h
 ./sipm_tot_analysis_cpp.so: ../header/EventCache.h
+./sipm_tot_analysis_cpp.so: /home/giacomo/tools/root/include/TParameter.h
+./sipm_tot_analysis_cpp.so: /home/giacomo/tools/root/include/Riostream.h
 ./sipm_tot_analysis_cpp.so: ../header/TimingCorrection.h
 ./sipm_tot_analysis_cpp.so: ../header/TOTPlotting.h
 ./sipm_tot_analysis_cpp.so: /home/giacomo/tools/root/include/TStyle.h
@@ -139,6 +142,7 @@
 ./sipm_tot_analysis_cpp.so: ../header/PersistencePlot.h
 ./sipm_tot_analysis_cpp.so: ../header/ChunkedHistoFill.h
 ./sipm_tot_analysis_cpp.so: ../header/TOTBandPersistence.h
+./sipm_tot_analysis_cpp.so: ../header/TOTAnalysis_loose.h
 ./sipm_tot_analysis_cpp.so: /home/giacomo/tools/root/include/TChain.h
 ./sipm_tot_analysis_cpp.so: /home/giacomo/tools/root/include/RVersion.h /home/giacomo/tools/root/include/ROOT/RConfig.hxx /home/giacomo/tools/root/include/TClass.h /home/giacomo/tools/root/include/TDictAttributeMap.h /home/giacomo/tools/root/include/TInterpreter.h /home/giacomo/tools/root/include/TROOT.h /home/giacomo/tools/root/include/TBuffer.h /home/giacomo/tools/root/include/TMemberInspector.h /home/giacomo/tools/root/include/TError.h /home/giacomo/tools/root/include/RtypesImp.h /home/giacomo/tools/root/include/TIsAProxy.h /home/giacomo/tools/root/include/TFileMergeInfo.h /home/giacomo/tools/root/include/TCollectionProxyInfo.h /home/giacomo/tools/root/bin/rootcling
 sipm_tot_analysis_cpp__ROOTBUILDVERSION= 6.32.08

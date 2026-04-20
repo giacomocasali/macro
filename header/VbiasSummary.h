@@ -116,6 +116,102 @@ static void drawMultiLETOverlay(
 }
 
 // ============================================================
+//  RESOLUTION DB WRITER + σ vs LET canvas
+//  Writes sigmaResults to TTree "resolution_scan" consumed by
+//  plot_resolution_vs_threshold.cpp.
+//  Also draws the canvas: one curve per Vbias, X=LET, Y=sigma.
+// ============================================================
+#include <numeric>
+#include <TFile.h>
+#include <TTree.h>
+static void saveResolutionDB(
+        const std::map<int, std::map<double, std::pair<double,double>>>& sigmaResults,
+        OutCtx& ctx)
+{
+    if (sigmaResults.empty()) return;
+
+    // Write ROOT DB — try ../file_root/ first (matches plot script), fallback to rootDir
+    std::string dbDir  = ctx.rootDir;
+    std::string dbPath = dbDir + "/../file_root/resolution_scan_results.root";
+    gSystem->mkdir((dbDir + "/../file_root").c_str(), true);
+    TFile* fDB = TFile::Open(dbPath.c_str(), "RECREATE");
+    if (!fDB || fDB->IsZombie()) {
+        dbPath = dbDir + "/resolution_scan_results.root";
+        fDB = TFile::Open(dbPath.c_str(), "RECREATE");
+    }
+    if (!fDB || fDB->IsZombie()) {
+        std::cerr << "  [ResDB] Cannot write: " << dbPath << "\n";
+        delete fDB; return;
+    }
+    Int_t db_vbias = 0; Double_t db_thr=0, db_sigma=0, db_err=0;
+    TTree* tDB = new TTree("resolution_scan", "sigma vs LET");
+    tDB->Branch("vbias",        &db_vbias, "vbias/I");
+    tDB->Branch("threshold_pe", &db_thr,   "threshold_pe/D");
+    tDB->Branch("sigma_ns",     &db_sigma, "sigma_ns/D");
+    tDB->Branch("sigma_err_ns", &db_err,   "sigma_err_ns/D");
+    for (auto& [vb, letmap] : sigmaResults) {
+        db_vbias = vb;
+        for (auto& [let, sv] : letmap) {
+            db_thr=let; db_sigma=sv.first; db_err=sv.second; tDB->Fill();
+        }
+    }
+    fDB->Write(); fDB->Close(); delete fDB;
+    std::cout << "  [ResDB] Saved: " << dbPath << "\n";
+
+    // Canvas: σ vs LET, one TGraphErrors per Vbias
+    static const int cols[] = {kRed+1, kAzure+1, kGreen+2, kOrange+7, kMagenta+1, kCyan+2};
+    const int nc = (int)(sizeof(cols)/sizeof(cols[0]));
+
+    TCanvas* cRL = new TCanvas("cResVsLET","Timing resolution vs p.e. threshold",1000,750);
+    cRL->SetGrid();
+    cRL->SetLeftMargin(0.14f); cRL->SetBottomMargin(0.12f);
+    cRL->SetRightMargin(PAD_RIGHT); cRL->SetTopMargin(PAD_TOP);
+
+    TLegend* leg = new TLegend(0.62,0.68,0.90,0.88);
+    leg->SetBorderSize(1); leg->SetFillStyle(1001); leg->SetFillColor(0);
+    leg->SetTextFont(42); leg->SetTextSize(0.036);
+
+    bool first=true; int ci=0;
+    double yMin=1e9, yMax=-1e9;
+    // first pass: get y range
+    for (auto& [vb, letmap] : sigmaResults)
+        for (auto& [let, sv] : letmap) {
+            yMin=std::min(yMin, sv.first-sv.second);
+            yMax=std::max(yMax, sv.first+sv.second);
+        }
+
+    for (auto& [vb, letmap] : sigmaResults) {
+        std::vector<std::pair<double,std::pair<double,double>>> pts(letmap.begin(), letmap.end());
+        std::sort(pts.begin(), pts.end());
+        std::vector<double> vX,vY,vEX,vEY;
+        for (auto& [let,sv] : pts) {
+            vX.push_back(let); vY.push_back(sv.first);
+            vEX.push_back(0.0); vEY.push_back(sv.second);
+        }
+        TGraphErrors* gr = new TGraphErrors(
+            (int)vX.size(), vX.data(), vY.data(), vEX.data(), vEY.data());
+        gr->SetName(Form("gr_vbias_%d",vb));
+        gr->SetMarkerStyle(20); gr->SetMarkerSize(1.2);
+        gr->SetMarkerColor(cols[ci%nc]); gr->SetLineColor(cols[ci%nc]); gr->SetLineWidth(2);
+        if (first) {
+            gr->SetTitle("Timing resolution vs p.e. threshold;"
+                         "Threshold (p.e.);#sigma_{#Delta t} (ns)");
+            gr->Draw("APL");
+            double pad=std::max(0.01*(yMax-yMin),0.005);
+            gr->GetYaxis()->SetRangeUser(yMin-pad, yMax+pad);
+            gr->GetYaxis()->SetTitleOffset(1.4);
+            first=false;
+        } else { gr->Draw("PL SAME"); }
+        leg->AddEntry(gr, Form("Vbias %d V",vb), "lp");
+        ++ci;
+    }
+    if (!first) leg->Draw();
+    cRL->Update(); cRL->Modified();
+    ctx.savePNG(cRL, "resolution_vs_threshold.png");
+    std::cout << "  [ResDB] Canvas: resolution_vs_threshold.png\n";
+}
+
+// ============================================================
 //  CROSS-VBIAS SUMMARY
 //  One TGraphErrors per LET: sigma(Delta_t) [ns] vs Vbias [V].
 //  Only produced when >= 2 Vbias values have been analysed.
